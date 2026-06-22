@@ -1,71 +1,93 @@
 #include <Arduino.h>
-#include <NimBLEDevice.h>
+#include <bluefruit.h>
+#include <Wire.h>
+#include <Adafruit_DRV2605.h>
 
-#define MOTOR_PIN 2
+Adafruit_DRV2605 drv;
 
-// UUIDs must match your MAUI app
-#define SERVICE_UUID      "00001111-0000-1000-8000-00805F9B34FB"
-#define WRITE_CHAR_UUID   "00004444-0000-1000-8000-00805F9B34FB"
+#define SERVICE_UUID "00001111-0000-1000-8000-00805F9B34FB"
+#define WRITE_UUID   "00004444-0000-1000-8000-00805F9B34FB"
 
-NimBLECharacteristic* pWriteCharacteristic;
+#define RED_LED LED_RED
+// BLE Service
+BLEService hapticService(SERVICE_UUID);
 
-class WriteCallbacks : public NimBLECharacteristicCallbacks
+// BLE Characteristic
+BLECharacteristic writeCharacteristic(WRITE_UUID);
+
+void write_callback(uint16_t conn_hdl,
+                    BLECharacteristic* chr,
+                    uint8_t* data,
+                    uint16_t len)
 {
-    void onWrite(NimBLECharacteristic* pCharacteristic, NimBLEConnInfo& connInfo) override
+    String command = "";
+
+    for (int i = 0; i < len; i++)
     {
-        std::string value = pCharacteristic->getValue();
+        command += (char)data[i];
+    }
 
-        Serial.print("Received: ");
-        Serial.println(value.c_str());
+    Serial.print("Received: ");
+    Serial.println(command);
 
-        if (value == "VIBRATE")
+    if (command == "VIBRATE")
+    {
+        for (int i = 0; i < 3; i++)
         {
-            digitalWrite(MOTOR_PIN, HIGH);
+            digitalWrite(LED_RED, LOW);   // ON
+            delay(200);
 
-            delay(500);
-
-            digitalWrite(MOTOR_PIN, LOW);
+            digitalWrite(LED_RED, HIGH);  // OFF
+            delay(200);
         }
     }
-};
+}
 
 void setup()
 {
     Serial.begin(115200);
 
-    pinMode(MOTOR_PIN, OUTPUT);
-    digitalWrite(MOTOR_PIN, LOW);
+    Wire.begin();
 
-    NimBLEDevice::init("XIAOBLE");
+    drv.begin();
 
-    NimBLEServer* pServer =
-        NimBLEDevice::createServer();
+    drv.selectLibrary(1);
 
-    NimBLEService* pService =
-        pServer->createService(SERVICE_UUID);
+    drv.setMode(DRV2605_MODE_INTTRIG);
 
-    pWriteCharacteristic =
-        pService->createCharacteristic(
-            WRITE_CHAR_UUID,
-            NIMBLE_PROPERTY::WRITE
-        );
+    Bluefruit.begin();
 
-    pWriteCharacteristic->setCallbacks(
-        new WriteCallbacks());
+    Bluefruit.setTxPower(4);
 
-    pService->start();
+    Bluefruit.setName("XIAOBLE");
 
-    NimBLEAdvertising* advertising =
-        NimBLEDevice::getAdvertising();
+    hapticService.begin();
 
-    advertising->addServiceUUID(SERVICE_UUID);
+    writeCharacteristic.setProperties(CHR_PROPS_WRITE);
 
-    advertising->start();
+    writeCharacteristic.setPermission(SECMODE_OPEN, SECMODE_OPEN);
 
-    Serial.println("XIAOBLE advertising...");
+    writeCharacteristic.setFixedLen(20);
+
+    writeCharacteristic.setWriteCallback(write_callback);
+
+    writeCharacteristic.begin();
+
+    Bluefruit.Advertising.addService(hapticService);
+
+    Bluefruit.ScanResponse.addName();
+
+    Bluefruit.Advertising.restartOnDisconnect(true);
+
+    Bluefruit.Advertising.setInterval(32, 244);
+
+    Bluefruit.Advertising.setFastTimeout(30);
+
+    Bluefruit.Advertising.start(0);
+
+    Serial.println("XIAO BLE Ready");
 }
 
 void loop()
 {
-    delay(100);
 }
